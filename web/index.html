@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Meblarz</title>
+<style>
+  :root { --bg:#1b1d22; --panel:#24272e; --line:#363a44; --text:#e6e8ec; --muted:#9aa0ac; --accent:#f2c14e; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:14px system-ui, sans-serif; }
+  #app { display:grid; grid-template-columns: 320px 1fr; height:100%; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:12px; overflow:auto; }
+  #view { position:relative; min-width:0; }
+  #view canvas { display:block; width:100%; height:100%; }
+  h3 { margin:14px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  button { background:#323744; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  .row { display:flex; flex-wrap:wrap; gap:6px; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:6px 8px; border-radius:6px; cursor:pointer; }
+  li:hover { background:#2d313b; }
+  li.sel { background:#3a3421; color:var(--accent); }
+  .grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:6px; }
+  label { display:block; font-size:12px; color:var(--muted); }
+  input[type=text], input[type=number], select { width:100%; background:#171a1f; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 6px; }
+  #props { display:none; }
+  @media (max-width: 700px) { #app { grid-template-columns: 1fr; grid-template-rows: 45% 55%; } aside { order:2; } }
+  dialog { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:16px; width:min(720px,95vw); }
+  dialog::backdrop { background:#0009; }
+  table { border-collapse:collapse; width:100%; margin-bottom:10px; }
+  th, td { padding:5px 8px; border-bottom:1px solid var(--line); text-align:left; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  #labels { position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:1; }
+  .lbl { position:absolute; transform:translate(-50%,-50%); font-size:12px; font-weight:600; padding:1px 6px; border-radius:4px; background:#000b; white-space:nowrap; }
+  #edges { display:grid; grid-template-columns:1fr 1fr; gap:2px 8px; }
+  #views { position:absolute; top:8px; left:8px; z-index:2; display:flex; gap:4px; }
+  #views button.on { border-color:var(--accent); color:var(--accent); }
+  h3.sec { cursor:pointer; user-select:none; }
+  h3.sec::before { content:'▾ '; }
+  h3.sec.closed::before { content:'▸ '; }
+  #list { max-height:260px; overflow:auto; }
+  #palette { display:grid; grid-template-columns:repeat(8, 1fr); gap:4px; }
+  #palette button { height:24px; padding:0; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <a href="/apartment.html" style="color:var(--accent)">Moduł mieszkania →</a>
+    <div class="row" style="margin-top:8px"><button id="collapseall">Zwiń sekcje</button><button id="expandall">Rozwiń sekcje</button></div>
+    <h3>Dodaj płytę</h3>
+    <div class="row">
+      <button data-preset="bok">Bok (pion)</button>
+      <button data-preset="poziom">Dno / półka</button>
+      <button data-preset="tyl">Tył</button>
+      <button data-preset="wlasna">Własna</button>
+    </div>
+
+    <h3>Płyty</h3>
+    <input type="text" id="filter" placeholder="Szukaj płyty po nazwie…" />
+    <ul id="list"></ul>
+
+    <h3>Edycja</h3>
+    <div class="row"><button id="undo">↶ Cofnij</button><button id="redo">↷ Ponów</button></div>
+
+    <div id="props">
+      <h3 id="count">Zaznaczona płyta</h3>
+      <div id="single">
+        <label>Nazwa płyty (tak będzie w zestawieniu)<input type="text" id="name" /></label>
+        <h3>Wymiary (mm)</h3>
+        <div class="grid">
+          <label>Szerokość X<input type="number" id="sx" step="1" /></label>
+          <label>Wysokość Y<input type="number" id="sy" step="1" /></label>
+          <label>Głębokość Z<input type="number" id="sz" step="1" /></label>
+        </div>
+        <h3>Obróć o 90°</h3>
+        <div class="row">
+          <button data-rot="1,2">wokół X</button>
+          <button data-rot="0,2">wokół Y</button>
+          <button data-rot="0,1">wokół Z</button>
+        </div>
+        <h3>Okleina – wybrane krawędzie</h3>
+        <div id="edges"></div>
+        <h3>Materiał</h3>
+        <select id="matsel">
+          <option value="">Auto (wg grubości)</option>
+          <option value="chipboard">Płyta wiórowa</option>
+          <option value="mdf">MDF</option>
+          <option value="hdf">HDF (tył)</option>
+          <option value="plywood">Sklejka</option>
+          <option value="pine">Drewno sosnowe</option>
+        </select>
+        <h3>Otwory i wiercenia</h3>
+        <div class="row">
+          <button id="h-hole">+ Otwór</button>
+          <button id="h-hinge">+ Puszki zawiasu Ø35</button>
+          <button id="h-shelf">+ Rząd pod półki</button>
+          <button id="h-handle">+ Uchwyt</button>
+        </div>
+        <select id="holesel" style="margin-top:6px"></select>
+        <div id="holefields">
+          <label>Strona płyty<select id="hface"></select></label>
+          <div class="grid">
+            <label id="hul">Od krawędzi (mm)<input type="number" id="hu" step="1" /></label>
+            <label id="hvl">Od krawędzi (mm)<input type="number" id="hv" step="1" /></label>
+            <label>Średnica Ø (mm)<input type="number" id="hd" min="1" step="0.5" /></label>
+          </div>
+          <label>Głębokość (mm, 0 = na wylot)<input type="number" id="hdepth" min="0" step="0.5" /></label>
+          <div class="row" style="margin-top:6px"><button id="hdel">Usuń otwór</button><button id="hdelall">Usuń wszystkie</button></div>
+        </div>
+      </div>
+      <h3>Pozycja (mm)</h3>
+      <div class="grid">
+        <label>X<input type="number" id="px" step="1" /></label>
+        <label>Y<input type="number" id="py" step="1" /></label>
+        <label>Z<input type="number" id="pz" step="1" /></label>
+      </div>
+      <h3>Okleina</h3>
+      <label>Grubość okleiny
+        <select id="edgemm"><option value="0.8">0,8 mm</option><option value="2">2 mm</option></select></label>
+      <label><input type="checkbox" id="shrink" checked /> pomniejsz płytę o grubość okleiny (gotowy wymiar = zaprojektowany, drzwiczki się nie ocierają)</label>
+      <div class="row" style="margin-top:6px">
+        <button id="edgeall">Wszystkie krawędzie</button>
+        <button id="edgelong">Tylko długie</button>
+        <button id="edgenone">Zdejmij</button>
+      </div>
+      <h3>Kolor i tekstura</h3>
+      <div id="palette"></div>
+      <div class="row" style="margin-top:6px">
+        <input type="color" id="pickcolor" value="#c8a574" style="width:44px;height:30px;padding:0" />
+        <button id="addcolor">+ do palety</button>
+        <button id="nocolor">Domyślny</button>
+      </div>
+      <label style="margin-top:6px">Tekstura z biblioteki
+        <select id="texsel"></select></label>
+      <div class="row" style="margin-top:6px">
+        <button id="texup">Wgraj teksturę…</button>
+        <button id="texdel">Usuń z biblioteki</button>
+      </div>
+      <input type="file" id="texfile" accept="image/*" hidden />
+      <label>Jedno powtórzenie tekstury (mm)<input type="number" id="texsize" value="600" min="10" step="10" /></label>
+      <label><input type="checkbox" id="texrot" /> obróć usłojenie o 90°</label>
+      <h3>Akcje</h3>
+      <div class="row">
+        <button id="group">Grupuj</button>
+        <button id="ungroup">Rozgrupuj</button>
+        <button id="dup">Duplikuj</button>
+        <button id="del">Usuń</button>
+      </div>
+    </div>
+
+    <h3>Przyciąganie</h3>
+    <label><input type="checkbox" id="snap" checked /> włączone (krawędzie i środki płyt)</label>
+    <label><input type="checkbox" id="dims" checked /> pokaż wymiary zaznaczenia</label>
+    <label>Zasięg (mm)<input type="number" id="tol" value="15" min="1" step="1" /></label>
+
+    <h3>Zestawienie</h3>
+    <div class="row"><button id="cutbtn">Zestawienie płyt</button><button id="drillbtn">Lista wierceń</button><button id="massbtn">Masa i nośność</button></div>
+
+    <h3>Plik</h3>
+    <div class="row">
+      <button id="save">Zapisz JSON</button>
+      <button id="load">Wczytaj JSON</button>
+      <button id="tolib">Do biblioteki</button>
+      <button id="dxf">Eksport DXF</button>
+      <input type="file" id="file" accept=".json" hidden />
+    </div>
+  <h3>Skróty</h3>
+    <div style="font-size:12px;color:var(--muted);line-height:1.7">
+      Klik – zaznacz · Ctrl/Shift+klik – dodaj/odejmij<br>
+      Kulki na ściankach – przeciągnij, by zmienić wymiar<br>
+      Ctrl+A – wszystko · Esc – odznacz<br>
+      Delete – usuń · Ctrl+D – duplikuj<br>
+      Ctrl+G – grupuj · Ctrl+Shift+G – rozgrupuj<br>
+      Ctrl+Z – cofnij · Ctrl+Y – ponów<br>
+      Widok: 1 przód · 2 bok · 3 góra · 0 perspektywa<br>
+      Strzałki – przesuń 10 mm (Shift: 1 mm)<br>
+      PageUp/PageDown – góra/dół
+    </div>
+  </aside>
+  <div id="view">
+    <div id="labels"></div>
+    <div id="views">
+      <button data-view="persp" class="on">3D</button>
+      <button data-view="front">Przód</button>
+      <button data-view="side">Bok</button>
+      <button data-view="top">Góra</button>
+    </div>
+  </div>
+</div>
+<dialog id="cut">
+  <h3 style="margin-top:0">Zestawienie płyt</h3>
+  <table>
+    <thead><tr><th>Lp.</th><th>Nazwa</th><th>Dekor</th><th>Długość</th><th>Szerokość</th><th>Grubość</th><th>Ilość</th><th>Gotowy wymiar</th><th>Okleina</th></tr></thead>
+    <tbody id="cutbody"></tbody>
+  </table>
+  <p id="cutsum"></p>
+  <div class="row"><button id="cutcsv">Pobierz CSV</button><button id="cutcopy">Kopiuj CSV</button><button id="cutclose">Zamknij</button></div>
+  <p style="font-size:12px;color:var(--muted)">Wymiary w mm. Długość = największy wymiar płyty, grubość = najmniejszy. Okleina: liczba oklejonych krawędzi wzdłuż długości (dł.) i szerokości (szer.). Wymiary formatek są po pomniejszeniu o okleinę (jeśli opcja była włączona); „Gotowy wymiar" = formatka + okleina.</p>
+</dialog>
+<dialog id="mass">
+  <h3 style="margin-top:0">Masa mebla</h3>
+  <table>
+    <thead><tr><th>Płyta</th><th>Materiał</th><th>Masa [kg]</th></tr></thead>
+    <tbody id="massbody"></tbody>
+  </table>
+  <p id="masssum"></p>
+  <h3>Nośność półek (orientacyjnie)</h3>
+  <label>Dopuszczalne ugięcie
+    <select id="defl"><option value="200">L/200 (zalecane)</option><option value="300">L/300 (ostrzej)</option></select></label>
+  <table style="margin-top:8px">
+    <thead><tr><th>Półka</th><th>Materiał</th><th>Rozpiętość [mm]</th><th>Chwilowo</th><th>Długotrwale</th></tr></thead>
+    <tbody id="shelfbody"></tbody>
+  </table>
+  <p style="font-size:12px;color:var(--muted)">Obliczenia orientacyjne: półka swobodnie podparta na końcach, obciążenie równomierne na całej rozpiętości (zmień rozpiętość, jeśli jest podpora pośrednia). „Długotrwale" uwzględnia pełzanie płyty (np. książki stojące miesiącami). Dane materiałowe są przybliżone. Nie obejmują nośności kołków i łączników, wilgoci ani jakości płyty konkretnego producenta – to nie jest obliczenie konstrukcyjne. Masa nie zawiera okuć.</p>
+  <div class="row"><button id="massclose">Zamknij</button></div>
+</dialog>
+<dialog id="drill">
+  <h3 style="margin-top:0">Lista wierceń</h3>
+  <table>
+    <thead><tr><th>Płyta</th><th>Rodzaj</th><th>Strona</th><th>Położenie [mm]</th><th>Ø</th><th>Głębokość</th></tr></thead>
+    <tbody id="drillbody"></tbody>
+  </table>
+  <p id="drillsum"></p>
+  <div class="row"><button id="drillcsv">Pobierz CSV</button><button id="drillclose">Zamknij</button></div>
+</dialog>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
