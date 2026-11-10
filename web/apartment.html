@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Meblarz – mieszkanie</title>
+<style>
+  :root { --bg:#1b1d22; --panel:#24272e; --line:#363a44; --text:#e6e8ec; --muted:#9aa0ac; --accent:#f2c14e; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:14px system-ui, sans-serif; }
+  #app { display:grid; grid-template-columns: 320px 1fr; height:100%; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:12px; overflow:auto; }
+  #view { position:relative; min-width:0; overflow:hidden; }
+  #view canvas { display:block; width:100%; height:100%; }
+  a { color:var(--accent); }
+  h3 { margin:14px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  button { background:#323744; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; }
+  button:hover, button.on { border-color:var(--accent); }
+  button.on { color:var(--accent); }
+  .row { display:flex; flex-wrap:wrap; gap:6px; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:6px; }
+  label { display:block; font-size:12px; color:var(--muted); }
+  input[type=text], input[type=number], select { width:100%; background:#171a1f; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 6px; }
+  input[type=range] { width:100%; }
+  .box { display:none; }
+  .xh { position:absolute; z-index:3; display:none; pointer-events:none; width:30px; height:30px; margin:-15px 0 0 -15px; }
+  .xh::before, .xh::after { content:''; position:absolute; background:#5ec8e5; box-shadow:0 0 2px #000, 0 0 2px #000; }
+  .xh::before { left:14px; top:0; width:2px; height:30px; }
+  .xh::after { top:14px; left:0; height:2px; width:30px; }
+  .lbl { position:absolute; z-index:2; transform:translate(-50%,-50%); pointer-events:none; font-size:12px; font-weight:600; padding:1px 6px; border-radius:4px; background:#000b; white-space:nowrap; }
+  #tip { position:absolute; z-index:2; display:none; pointer-events:none; font-size:12px; font-weight:600; padding:1px 6px; border-radius:4px; background:#000b; }
+  .hint { font-size:12px; color:var(--muted); line-height:1.7; }
+  @media (max-width: 700px) { #app { grid-template-columns: 1fr; grid-template-rows: 45% 55%; } aside { order:2; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <a href="/">← Edytor mebli</a>
+
+    <h3>Narzędzie</h3>
+    <div class="row">
+      <button id="tselect" class="on">Wybierz / przesuń</button>
+      <button id="twall">Rysuj ściany</button>
+      <button id="tscale">Ustaw skalę rzutu</button>
+    </div>
+
+    <h3>Rzut mieszkania</h3>
+    <div class="row"><button id="planbtn">Wczytaj rzut (obraz)…</button></div>
+    <input type="file" id="planfile" accept="image/*" hidden />
+    <label>Przezroczystość rzutu<input type="range" id="opacity" min="0.1" max="1" step="0.05" value="0.6" /></label>
+
+    <h3>Nowe ściany</h3>
+    <div class="grid2">
+      <label>Grubość (mm)<input type="number" id="wt" value="150" min="1" /></label>
+      <label>Wysokość (mm)<input type="number" id="wh" value="2600" min="1" /></label>
+    </div>
+    <label><input type="checkbox" id="ortho" checked /> proste kąty (poziomo/pionowo)</label>
+    <label><input type="checkbox" id="snap" checked /> przyciąganie (końce ścian, ściany, meble)</label>
+    <label>Zasięg przyciągania mebli (mm)<input type="number" id="tol" value="40" min="1" /></label>
+
+    <h3>Widok</h3>
+    <div class="row"><button id="v2d" class="on">2D (z góry)</button><button id="v3d">3D</button></div>
+
+    <div id="wallbox" class="box">
+      <h3>Wybrana ściana</h3>
+      <label>Długość po osi (mm), między punktami A i B<input type="number" id="swl" min="1" step="1" /></label>
+      <label>Który koniec ma się przesuwać?
+        <select id="swanchor">
+          <option value="0">koniec B (A stoi w miejscu)</option>
+          <option value="1">koniec A (B stoi w miejscu)</option>
+          <option value="2">oba końce (środek stoi)</option>
+        </select></label>
+      <label><input type="checkbox" id="swconn" checked /> przesuń też połączone ściany</label>
+      <div class="grid2" style="margin-top:6px">
+        <label>Grubość / szerokość (mm)<input type="number" id="swt" min="1" /></label>
+        <label>Wysokość (mm)<input type="number" id="swh" min="1" /></label>
+      </div>
+      <h3>Drzwi i okna</h3>
+      <div class="row"><button id="adddoor">+ Drzwi</button><button id="addwin">+ Okno</button></div>
+      <div id="opbox">
+        <select id="opsel" style="margin-top:6px"></select>
+        <div id="opfields">
+          <div class="grid2" style="margin-top:6px">
+            <label>Położenie od A (mm)<input type="number" id="opp" step="10" /></label>
+            <label>Szerokość (mm)<input type="number" id="opw" min="50" /></label>
+            <label>Wysokość (mm)<input type="number" id="oph" min="50" /></label>
+            <label>Parapet od podłogi (mm)<input type="number" id="ops" min="0" /></label>
+          </div>
+          <div class="row" style="margin-top:6px"><button id="opdel">Usuń otwór</button></div>
+        </div>
+      </div>
+    </div>
+    <div id="instbox" class="box">
+      <h3>Wybrany mebel</h3>
+      <div id="instname" class="hint"></div>
+      <div class="row"><button id="rot">Obróć o 90° (R)</button></div>
+    </div>
+    <div id="selactions" class="box"><div class="row" style="margin-top:8px"><button id="del">Usuń (Delete)</button></div></div>
+
+    <h3>AutoCAD (DXF)</h3>
+    <div class="row"><button id="dxfimport">Importuj DXF…</button><button id="dxfexport">Eksportuj plan DXF</button></div>
+    <input type="file" id="dxffile" accept=".dxf,.dwg" hidden />
+    <label>Jednostki rysunku
+      <select id="dxfunit">
+        <option value="auto">z pliku (auto)</option>
+        <option value="1">milimetry</option>
+        <option value="10">centymetry</option>
+        <option value="1000">metry</option>
+      </select></label>
+    <div id="cadinfo" class="hint"></div>
+    <div id="cadlayers"></div>
+    <div class="row" id="cadbtns" style="display:none;margin-top:6px">
+      <button id="cadwalls">Ściany z zaznaczonych warstw</button>
+      <button id="cadclear">Usuń podkład CAD</button>
+    </div>
+
+    <h3>Meble</h3>
+    <label>Z biblioteki (zapisz w edytorze przyciskiem „Do biblioteki")
+      <select id="lib"></select></label>
+    <div class="row" style="margin-top:6px">
+      <button id="libadd">Wstaw</button>
+      <button id="libfile">Z pliku…</button>
+      <button id="libreload">Odśwież</button>
+    </div>
+    <input type="file" id="furnfile" accept=".json" hidden />
+
+    <h3>Plik</h3>
+    <div class="row"><button id="save">Zapisz mieszkanie</button><button id="load">Wczytaj</button></div>
+    <input type="file" id="aptfile" accept=".json" hidden />
+
+    <h3>Podpowiedzi</h3>
+    <div class="hint">
+      1. Wczytaj rzut, potem „Ustaw skalę": kliknij dwa punkty o znanej odległości i wpisz ją w mm.<br>
+      2. „Rysuj ściany": klik = kolejny punkt. Prawy klik lub Esc kończy linię. Kliknięcie w początek zamyka pokój.<br>
+      3. Wstaw mebel z biblioteki i przeciągnij go; przyciąga się do ścian.<br>
+      Zaznaczoną ścianę przeciągnij myszą (przyciąga się do końców innych ścian). Cyjanowe kulki na końcach wydłużają ją, różowe na bokach zmieniają grubość. Strzałki przesuwają zaznaczenie (Shift: 1 mm). Drzwi i okna dodajesz w panelu zaznaczonej ściany.<br>
+      Prawy przycisk myszy – przesuwanie widoku, kółko – zoom.<br>
+      DWG: zapisz w AutoCAD jako DXF (Zapisz jako → DXF). Bez AutoCADa: LibreCAD (sudo dnf install librecad) otworzy DWG i zapisze DXF.<br>
+      Delete – usuń · R – obróć · Ctrl+Z / Ctrl+Y – cofnij / ponów
+    </div>
+  </aside>
+  <div id="view"><div id="tip"></div></div>
+</div>
+<script type="module" src="/src/apartment.ts"></script>
+</body>
+</html>
